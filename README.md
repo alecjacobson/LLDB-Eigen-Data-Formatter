@@ -5,20 +5,21 @@ LLDB Data Formatter for dense matrices and vectors of the [Eigen](http://eigen.t
 ## Example
 
 ```cpp
-Eigen::Matrix<double, 3, 3> A;
-A << 1, 0, 0,
-	 0, 2, 0,
-	 0, 0, 3;
+Eigen::Matrix<double, 3, 4> A;
+A << 1, 2, 3, 4,
+    5, 6, 7, 8,
+    9, 10, 11, 12;
 ```
 
 Corresponding output in LLDB
 
 ```
 (lldb) print A
-(Eigen::Matrix<double, 3, 3, 0, 3, 3>) $11 = rows: 3, cols: 3
-[ 1 0 0;
-  0 2 0;
-  0 0 3 ]
+(Eigen::Matrix<double, 3, 4, 0, 3, 4>) $2 = rows: 3, cols: 4
+[ 1   2   3   4;
+  5   6   7   8;
+  9  10  11  12;
+]
 ```
 
 ## Installation

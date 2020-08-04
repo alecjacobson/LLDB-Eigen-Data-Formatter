@@ -30,6 +30,12 @@ class suppress_stdout_stderr(object):
 def evaluate_expression(valobj, expr):
     return valobj.GetProcess().GetSelectedThread().GetSelectedFrame().EvaluateExpression(expr)
 
+
+def _row_element(valobj, row, rows, cols):
+    for i in range(row, rows*cols, rows):
+        yield valobj.GetChildAtIndex(i, lldb.eNoDynamicValues, True).GetValue()
+
+
 def print_raw_matrix(valobj, rows, cols):
     if rows*cols > 100:
       return "[matrix too large]"
@@ -43,19 +49,13 @@ def print_raw_matrix(valobj, rows, cols):
         padding = max(padding, len(str(valobj.GetChildAtIndex(i, lldb.eNoDynamicValues, True).GetValue())))
 
     # print values
-    for i in range(0,rows):
-        if i!=0:
+    for j in range(0, rows):
+        if j!=0:
             output += " "
 
-        for j in range(0,cols):
-            val = valobj.GetChildAtIndex(j+i*cols, lldb.eNoDynamicValues, True).GetValue()
-            output += val.rjust(padding+1, ' ')
+        output += "".join(val.rjust(padding+1, ' ') for val in _row_element(valobj, j, rows, cols)) + ";\n"
         
-        if i!=rows-1:
-            output += ";\n"
-
-    output+=" ]\n"
-    return output
+    return output + " ]\n"
 
 def fixed_sized_matrix_to_string(valobj):
     data = valobj.GetValueForExpressionPath(".m_storage.m_data.array")
