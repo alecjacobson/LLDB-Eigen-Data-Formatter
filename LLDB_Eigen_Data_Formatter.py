@@ -1,5 +1,8 @@
 import lldb
 import os
+import re
+
+
 
 def __lldb_init_module (debugger, dict):
     debugger.HandleCommand("type summary add -x \"Eigen::Matrix\" -F LLDB_Eigen_Data_Formatter.format_matrix")
@@ -27,21 +30,55 @@ class suppress_stdout_stderr(object):
         os.close(self.null_fds[0])
         os.close(self.null_fds[1])
 
+
+# Somewhat nasty way to determine if a matrix is row-major or column-major.
+def extract_is_row_major(matrix_var):
+    """
+    Determines if an Eigen matrix is row-major based on its type signature.
+    :param matrix_var: LLDB SBValue representing the Eigen matrix variable.
+    :return: True if row-major, False if column-major, None if the type couldn't be parsed.
+    """
+    matrix_type = matrix_var.GetType().GetName()
+    
+    # Use regex to extract the template parameters from the type string
+    template_regex = re.compile(r'Eigen::Matrix<[^,]+, [^,]+, [^,]+, (\d),')
+    match = template_regex.search(matrix_type)
+    
+    if not match:
+        print("Could not determine matrix layout from type:", matrix_type)
+        return None
+
+    # The fourth template argument (1 for row-major, 0 for column-major)
+    storage_order = match.group(1)
+    
+    if storage_order == '1':
+        return True
+    elif storage_order == '0':
+        return False
+    else:
+        print("Unexpected storage order value:", storage_order)
+        return None
+
+
 def evaluate_expression(valobj, expr):
     return valobj.GetProcess().GetSelectedThread().GetSelectedFrame().EvaluateExpression(expr)
 
 
-def _row_element(valobj, row, rows, cols):
-    for i in range(row, rows*cols, rows):
-        yield valobj.GetChildAtIndex(i, lldb.eNoDynamicValues, True).GetValue()
+def _row_element(valobj, row, rows, cols, is_row_major):
+    if is_row_major:
+        for i in range(row*cols, (row+1)*cols):
+            yield valobj.GetChildAtIndex(i, lldb.eNoDynamicValues, True).GetValue()
+    else:
+        for i in range(row, rows*cols, rows):
+            yield valobj.GetChildAtIndex(i, lldb.eNoDynamicValues, True).GetValue()
 
 
-def print_raw_matrix(valobj, rows, cols):
+def print_raw_matrix(valobj, rows, cols, is_row_major):
     if rows*cols > 100:
       return "[matrix too large]"
     output = ""
     # print matrix dimensions
-    output += "rows: " + str(rows) + ", cols: " + str(cols) + "\n["
+    output += f"rows: {rows}, cols: {cols}, is_row_major: {is_row_major}\n["
 
     # determine padding
     padding = 1
@@ -53,7 +90,7 @@ def print_raw_matrix(valobj, rows, cols):
         if j!=0:
             output += " "
 
-        output += "".join(val.rjust(padding+1, ' ') for val in _row_element(valobj, j, rows, cols)) + ";\n"
+        output += "".join(val.rjust(padding+1, ' ') for val in _row_element(valobj, j, rows, cols, is_row_major)) + ";\n"
         
     return output + " ]\n"
 
@@ -87,7 +124,7 @@ def fixed_sized_matrix_to_string(valobj):
       cols = 1
       rows = num_data_elements
     
-    return print_raw_matrix(data, rows, cols)
+    return print_raw_matrix(data, rows, cols, extract_is_row_major(valobj))
 
 def dynamically_sized_matrix_to_string(valobj):
     data = valobj.GetValueForExpressionPath(".m_storage.m_data")
@@ -119,7 +156,7 @@ def dynamically_sized_matrix_to_string(valobj):
     if not memory_accessable:
         return "[uninitialized]"
 
-    return print_raw_matrix(data, rows, cols)
+    return print_raw_matrix(data, rows, cols, extract_is_row_major(valobj))
 
 def format_matrix(valobj,internal_dict):
     # determine type
